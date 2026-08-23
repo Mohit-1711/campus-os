@@ -40,4 +40,34 @@ async function handleSignup(req, res, next) {
   }
 }
 
-module.exports = { handleSignup };
+async function handleLogin(req, res) {
+  const { email, password } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: "Please enter your email address." });
+  }
+  // I am not validating password since website dont tell the format of password in login time
+  if (!password) {
+    return res.status(400).json({ error: "Please enter a password" });
+  }
+  try {
+    const userFound = await User.findOne({ email });
+    if (!userFound) {
+      return res.status(409).json({
+        message: "Invalid email or password",
+      });
+    }
+    const validatePassword = await bcrypt.compare(password, userFound.password);
+    if (!validatePassword) {
+      return res.status(409).json({
+        message: "Invalid email or password",
+      });
+    }
+    return res.status(200).json({
+      message: "Logged in successfully",
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { handleSignup, handleLogin };
