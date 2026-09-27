@@ -75,4 +75,22 @@ async function handleLogin(req, res, next) {
   }
 }
 
-module.exports = { handleSignup, handleLogin };
+async function handleGetMe(req, res, next) {
+  try {
+    const userId = req.user.userId;
+    const user = await User.findById(userId).select("-password");
+    if (!user) {
+      return res.status(404).json({
+        message: "user not found",
+      });
+    }
+    return res.status(200).json({
+      message: "User fetched successfully",
+      user,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { handleSignup, handleLogin, handleGetMe };
