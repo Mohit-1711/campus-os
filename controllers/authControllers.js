@@ -77,6 +77,7 @@ async function handleLogin(req, res, next) {
 
 async function handleGetMe(req, res, next) {
   try {
+    //the req.user is recieved be decoding the jwt(see authMiddleware) which contains userId,iat,exp
     const userId = req.user.userId;
     const user = await User.findById(userId).select("-password");
     if (!user) {
