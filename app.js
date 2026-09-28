@@ -14,7 +14,7 @@ app.get("/api/health", (req, res) => {
   });
 });
 app.use("/api/auth", authRoutes);
-app.use("/", handleAuth, folderRoutes);
+app.use("/api/folder", handleAuth, folderRoutes);
 //kept this after routes since the purpose of using this is to catch error of the routes so inshort it runs after routes
 app.use(handleError);
 
