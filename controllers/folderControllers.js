@@ -20,8 +20,8 @@ async function handleCreateFolder(req, res, next) {
       message: "Folder created successfully",
       folder,
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 }
 
@@ -34,8 +34,8 @@ async function handleGetFolder(req, res, next) {
       message: "Folders fetched successfully",
       folders,
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 }
 async function handleRenameFolder(req, res, next) {
@@ -67,5 +67,31 @@ async function handleRenameFolder(req, res, next) {
     next(error);
   }
 }
+async function handleDeleteFolder(req, res, next) {
+  try {
+    const userId = req.user.userId;
+    const folderId = req.params.folderId;
+    const folder = await Folder.findOneAndDelete({
+      user: userId,
+      _id: folderId,
+    });
+    if (!folder) {
+      return res.status(404).json({
+        message: "Folder not found",
+      });
+    }
+    return res.status(204).json({
+      message: "Folder deleted successfully",
+      folder,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
 
-module.exports = { handleCreateFolder, handleGetFolder, handleRenameFolder };
+module.exports = {
+  handleCreateFolder,
+  handleGetFolder,
+  handleRenameFolder,
+  handleDeleteFolder,
+};
