@@ -1,6 +1,7 @@
 const express = require("express");
 const { router: authRoutes } = require("./routes/authRoutes");
 const { router: folderRoutes } = require("./routes/folderRoutes");
+const { router: fileRoutes } = require("./routes/fileRoutes");
 const handleError = require("./middlewares/errorHandler");
 const handleAuth = require("./middlewares/authMiddleware");
 
@@ -15,6 +16,7 @@ app.get("/api/health", (req, res) => {
 });
 app.use("/api/auth", authRoutes);
 app.use("/api/folder", handleAuth, folderRoutes);
+app.use("/api/folder", handleAuth, fileRoutes);
 //kept this after routes since the purpose of using this is to catch error of the routes so inshort it runs after routes
 app.use(handleError);
 
