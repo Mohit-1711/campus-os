@@ -1,8 +1,7 @@
 const express = require("express");
-const handleAuth = require("../middlewares/authMiddleware");
 const verifyFolderOwnership = require("../middlewares/verifyFolderOwnership");
 const upload = require("../middlewares/uploadMiddleware");
-const { uploadFile } = require("../controllers/fileControllers");
+const { uploadFile, listFiles } = require("../controllers/fileControllers");
 
 const router = express.Router();
 
@@ -12,5 +11,7 @@ router.post(
   upload.single("file"),
   uploadFile,
 );
+
+router.get("/:folderId/files", verifyFolderOwnership, listFiles);
 
 module.exports = { router };

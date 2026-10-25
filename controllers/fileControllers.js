@@ -60,5 +60,26 @@ async function uploadFile(req, res, next) {
     }
   }
 }
+async function listFiles(req, res, next) {
+  try {
+    const files = await File.find({
+      user: req.user.userId,
+      folder: req.folder._id,
+    })
+      .select(
+        "name originalName mimeType size cloudinaryUrl createdAt updatedAt",
+      )
+      .sort({ createdAt: -1 })
+      .lean();
 
-module.exports = { uploadFile };
+    return res.status(200).json({
+      message: "Files retrieved successfully",
+      count: files.length,
+      files,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+module.exports = { uploadFile, listFiles };
