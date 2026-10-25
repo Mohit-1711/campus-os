@@ -45,6 +45,11 @@ const fileSchema = mongoose.Schema(
       type: String,
       required: true,
     },
+    cloudinaryResourceType: {
+      type: String,
+      required: true,
+      enum: ["image", "raw", "video"],
+    },
   },
   { timestamps: true },
 );

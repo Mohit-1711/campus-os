@@ -1,6 +1,7 @@
 const fs = require("fs/promises");
 const cloudinary = require("../config/cloudinary");
 const File = require("../models/fileModel");
+const mongoose = require("mongoose");
 
 async function uploadFile(req, res, next) {
   let cloudinaryPublicId;
@@ -30,6 +31,7 @@ async function uploadFile(req, res, next) {
       size: req.file.size,
       cloudinaryUrl: result.secure_url,
       cloudinaryPublicId: result.public_id,
+      cloudinaryResourceType: result.resource_type,
     });
 
     return res.status(201).json({
@@ -60,6 +62,7 @@ async function uploadFile(req, res, next) {
     }
   }
 }
+
 async function listFiles(req, res, next) {
   try {
     const files = await File.find({
@@ -82,4 +85,46 @@ async function listFiles(req, res, next) {
   }
 }
 
-module.exports = { uploadFile, listFiles };
+async function deleteFile(req, res, next) {
+  try {
+    const { fileId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(fileId)) {
+      return res.status(400).json({
+        message: "Invalid file ID",
+      });
+    }
+
+    const file = await File.findOne({
+      _id: fileId,
+      folder: req.folder._id,
+      user: req.user.userId,
+    });
+
+    if (!file) {
+      return res.status(404).json({
+        message: "File not found",
+      });
+    }
+
+    const result = await cloudinary.uploader.destroy(file.cloudinaryPublicId, {
+      resource_type: file.cloudinaryResourceType,
+    });
+
+    if (result.result !== "ok" && result.result !== "not found") {
+      const error = new Error("Could not confirm Cloudinary deletion");
+      error.statusCode = 502;
+      return next(error);
+    }
+
+    await file.deleteOne();
+
+    return res.status(200).json({
+      message: "File deleted successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+module.exports = { uploadFile, listFiles, deleteFile };

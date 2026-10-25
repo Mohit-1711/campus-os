@@ -1,7 +1,11 @@
 const express = require("express");
 const verifyFolderOwnership = require("../middlewares/verifyFolderOwnership");
 const upload = require("../middlewares/uploadMiddleware");
-const { uploadFile, listFiles } = require("../controllers/fileControllers");
+const {
+  uploadFile,
+  listFiles,
+  deleteFile,
+} = require("../controllers/fileControllers");
 
 const router = express.Router();
 
@@ -13,5 +17,7 @@ router.post(
 );
 
 router.get("/:folderId/files", verifyFolderOwnership, listFiles);
+
+router.delete("/:folderId/files/:fileId", verifyFolderOwnership, deleteFile);
 
 module.exports = { router };
