@@ -127,4 +127,58 @@ async function deleteFile(req, res, next) {
   }
 }
 
-module.exports = { uploadFile, listFiles, deleteFile };
+async function renameFile(req, res, next) {
+  try {
+    const { fileId } = req.params;
+    const { name } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(fileId)) {
+      return res.status(400).json({
+        message: "Invalid file ID",
+      });
+    }
+
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({
+        message: "File name is required",
+      });
+    }
+
+    const trimmedName = name.trim();
+
+    if (trimmedName.length > 150) {
+      return res.status(400).json({
+        message: "File name cannot exceed 150 characters",
+      });
+    }
+
+    const file = await File.findOne({
+      _id: fileId,
+      folder: req.folder._id,
+      user: req.user.userId,
+    });
+
+    if (!file) {
+      return res.status(404).json({
+        message: "File not found",
+      });
+    }
+
+    file.name = trimmedName;
+    await file.save();
+
+    return res.status(200).json({
+      message: "File renamed successfully",
+      file: {
+        _id: file._id,
+        name: file.name,
+        originalName: file.originalName,
+        updatedAt: file.updatedAt,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+module.exports = { uploadFile, listFiles, deleteFile, renameFile };

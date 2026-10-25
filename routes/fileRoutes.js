@@ -5,6 +5,7 @@ const {
   uploadFile,
   listFiles,
   deleteFile,
+  renameFile,
 } = require("../controllers/fileControllers");
 
 const router = express.Router();
@@ -19,5 +20,6 @@ router.post(
 router.get("/:folderId/files", verifyFolderOwnership, listFiles);
 
 router.delete("/:folderId/files/:fileId", verifyFolderOwnership, deleteFile);
+router.patch("/:folderId/files/:fileId", verifyFolderOwnership, renameFile);
 
 module.exports = { router };
