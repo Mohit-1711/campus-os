@@ -42,8 +42,12 @@ export default function AuthPage({ onLogin, onSignup }) {
     <main className="auth-page">
       <section className="auth-card">
         <div className="auth-brand">
-          <div className="auth-brand-icon">CB</div>
-          <h1>College Buddy</h1>
+          <img
+            className="auth-brand-icon"
+            src="/favicon.svg"
+            alt="Campus OS logo"
+          />
+          <h1>Campus OS</h1>
           <p>Your college life, organized.</p>
         </div>
 
@@ -70,7 +74,7 @@ export default function AuthPage({ onLogin, onSignup }) {
           <p>
             {mode === "login"
               ? "Log in to continue to your dashboard."
-              : "Get started with your College Buddy account."}
+              : "Get started with your Campus OS account."}
           </p>
         </div>
 
@@ -146,9 +150,7 @@ export default function AuthPage({ onLogin, onSignup }) {
         </form>
 
         <p className="auth-switch">
-          {mode === "login"
-            ? "New to College Buddy?"
-            : "Already have an account?"}{" "}
+          {mode === "login" ? "New to Campus OS?" : "Already have an account?"}{" "}
           <button
             type="button"
             onClick={() => switchMode(mode === "login" ? "signup" : "login")}

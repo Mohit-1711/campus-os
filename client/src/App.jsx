@@ -236,12 +236,10 @@ function Icon({ name, size = 20, strokeWidth = 1.8 }) {
 function Brand() {
   return (
     <div className="brand">
-      <div className="brand-mark">
-        <Icon name="book" size={21} />
-      </div>
+      <img className="brand-mark" src="/favicon.svg" alt="Campus OS logo" />
       <div>
         <div className="brand-name">
-          college buddy<span className="brand-period">.</span>
+          campus os<span className="brand-period">.</span>
         </div>
         <div className="brand-tagline">YOUR ACADEMIC SPACE</div>
       </div>
@@ -354,9 +352,7 @@ function ComingSoonPage({ module, onBack }) {
           <div>
             <div className="module-eyebrow">THE PLAN</div>
             <h2>Designed around your real workflow.</h2>
-            <p>
-              Here's what we're working toward for this part of College Buddy.
-            </p>
+            <p>Here's what we're working toward for this part of Campus OS.</p>
           </div>
         </div>
         <div className="planned-grid">
@@ -411,20 +407,37 @@ export default function App() {
   }, [checkSession]);
 
   async function handleLogin(credentials) {
-    await authApi.login(credentials);
+    try {
+      await authApi.login(credentials);
 
-    const data = await authApi.getMe();
+      const data = await authApi.getMe();
 
-    setUser(data.user);
-    setAuthStatus("authenticated");
+      setUser(data.user);
+      setAuthStatus("authenticated");
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.message ||
+          error.response?.data?.error ||
+          "Login failed. Please try again.",
+      );
+    }
   }
 
   async function handleSignup(formData) {
-    await authApi.signup(formData);
+    try {
+      await authApi.signup(formData);
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.message ||
+          error.response?.data?.error ||
+          "Account creation failed. Please try again.",
+      );
+    }
   }
 
   async function handleLogout() {
     setIsLoggingOut(true);
+    setAuthError("");
 
     try {
       await authApi.logout();
@@ -434,6 +447,10 @@ export default function App() {
       setActivePage("dashboard");
       setSearch("");
       setMobileNavOpen(false);
+    } catch (error) {
+      setAuthError(
+        error.response?.data?.message || "Unable to log out. Please try again.",
+      );
     } finally {
       setIsLoggingOut(false);
     }
@@ -564,14 +581,26 @@ export default function App() {
             <Icon name="settings" size={18} />
             <span>Settings</span>
           </button>
+
           <div className="sidebar-account">
-            <div className="account-avatar">CB</div>
-            <div className="account-copy">
-              <strong>College Buddy</strong>
-              <span>Student workspace</span>
+            <div className="account-avatar">
+              {user?.name?.trim()?.charAt(0)?.toUpperCase() || "C"}
             </div>
-            <button className="account-more" aria-label="Account options">
-              <Icon name="dots" size={18} />
+
+            <div className="account-copy">
+              <strong>{user?.name || "Campus OS"}</strong>
+              <span>{user?.email || "Student workspace"}</span>
+            </div>
+
+            <button
+              className="account-more"
+              type="button"
+              aria-label="Log out"
+              title="Log out"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+            >
+              {isLoggingOut ? "..." : <Icon name="dots" size={18} />}
             </button>
           </div>
         </div>
@@ -615,12 +644,13 @@ export default function App() {
               <Icon name="bell" size={18} />
               <span />
             </button>
+
             <button
               className="top-avatar"
               onClick={() => navigate("profile")}
               aria-label="Open profile"
             >
-              CB
+              {user?.name?.trim()?.charAt(0)?.toUpperCase() || "C"}
             </button>
           </div>
         </header>
@@ -951,8 +981,8 @@ export default function App() {
             </section>
             <footer className="page-footer">
               <span>
-                College Buddy <span className="footer-dot">·</span> Your
-                academic space
+                Campus OS <span className="footer-dot">·</span> Your academic
+                space
               </span>
               <span>One step at a time.</span>
             </footer>

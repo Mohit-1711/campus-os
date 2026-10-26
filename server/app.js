@@ -24,7 +24,7 @@ app.use(cookieParser());
 
 app.get("/api/health", (req, res) => {
   res.json({
-    message: "College Buddy API is running",
+    message: "Campus OS API is running",
   });
 });
 

@@ -16,7 +16,7 @@ async function uploadFile(req, res, next) {
 
     const result = await cloudinary.uploader.upload(req.file.path, {
       resource_type: "auto",
-      folder: "college-buddy",
+      folder: "campus-os",
     });
 
     cloudinaryPublicId = result.public_id;
