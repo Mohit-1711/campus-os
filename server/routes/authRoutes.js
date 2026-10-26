@@ -1,20 +1,19 @@
 const express = require("express");
+
 const {
   handleSignup,
   handleLogin,
   handleGetMe,
+  handleLogout,
 } = require("../controllers/authControllers");
+
 const handleAuth = require("../middlewares/authMiddleware");
 
 const router = express.Router();
 
 router.post("/signup", handleSignup);
 router.post("/login", handleLogin);
-router.get("/me", handleAuth, handleGetMe, (req, res) => {
-  return res.json({
-    message: "User authorized",
-    user: req.user,
-  });
-});
+router.post("/logout", handleLogout);
+router.get("/me", handleAuth, handleGetMe);
 
 module.exports = { router };
