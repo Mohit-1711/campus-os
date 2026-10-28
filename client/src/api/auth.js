@@ -14,6 +14,19 @@ export const authApi = {
     return response.data;
   },
 
+  uploadFile: async (folderId, file) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await api.post(`/folder/${folderId}/files`, formData, {
+      headers: {
+        "Content-Type": null,
+      },
+    });
+
+    return response.data;
+  },
+
   login: async (formData) => {
     const response = await api.post("/auth/login", formData);
     return response.data;

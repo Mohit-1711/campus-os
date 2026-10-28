@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AuthPage from "./AuthPage";
 import { authApi } from "./api/auth";
+import { resourcesApi } from "./api/resources";
 import "./App.css";
 
 const modules = [
@@ -46,59 +47,78 @@ const modules = [
   },
 ];
 
-const sampleFolders = [
-  {
-    id: "semester-5",
-    name: "Semester 5",
-    subject: "Course materials",
-    count: 12,
-    tone: "purple",
-    initials: "S5",
-  },
-  {
-    id: "data-structures",
-    name: "Data Structures",
-    subject: "Notes & practice",
-    count: 8,
-    tone: "green",
-    initials: "DS",
-  },
-  {
-    id: "web-development",
-    name: "Web Development",
-    subject: "Projects & references",
-    count: 6,
-    tone: "orange",
-    initials: "WD",
-  },
-];
+function getFolderInitials(name = "") {
+  return name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+}
 
-const sampleFiles = [
-  {
-    id: 1,
-    name: "Operating Systems — Unit 3.pdf",
-    folder: "Semester 5",
-    updated: "Today",
-    type: "PDF",
-    size: "2.4 MB",
-  },
-  {
-    id: 2,
-    name: "DBMS revision notes.pdf",
-    folder: "Semester 5",
-    updated: "Yesterday",
-    type: "PDF",
-    size: "1.8 MB",
-  },
-  {
-    id: 3,
-    name: "React hooks summary.pdf",
-    folder: "Web Development",
-    updated: "Aug 18",
-    type: "PDF",
-    size: "940 KB",
-  },
-];
+function getFolderTone(name = "") {
+  const tones = ["purple", "green", "orange", "blue"];
+  const hash = [...name].reduce(
+    (total, character) => total + character.charCodeAt(0),
+    0,
+  );
+
+  return tones[hash % tones.length];
+}
+
+function formatFileSize(bytes) {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) {
+    return "—";
+  }
+
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function formatDate(dateValue) {
+  if (!dateValue) return "—";
+
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
+function getFileType(mimeType = "") {
+  if (mimeType === "application/pdf") return "PDF";
+  if (mimeType.startsWith("image/")) return "IMAGE";
+  if (mimeType.includes("word")) return "DOC";
+  if (mimeType.includes("presentation") || mimeType.includes("powerpoint")) {
+    return "PPT";
+  }
+  if (mimeType.includes("spreadsheet") || mimeType.includes("excel")) {
+    return "XLS";
+  }
+  if (mimeType.startsWith("text/")) return "TEXT";
+
+  return "FILE";
+}
+
+function getErrorMessage(error, fallback) {
+  return (
+    error.response?.data?.error || error.response?.data?.message || fallback
+  );
+}
 
 function Icon({ name, size = 20, strokeWidth = 1.8 }) {
   const paths = {
@@ -128,11 +148,7 @@ function Icon({ name, size = 20, strokeWidth = 1.8 }) {
         <path d="M14 2v6h6M8 13h8M8 17h5" />
       </>
     ),
-    code: (
-      <>
-        <path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14" />
-      </>
-    ),
+    code: <path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14" />,
     search: (
       <>
         <circle cx="10.8" cy="10.8" r="6.8" />
@@ -144,17 +160,9 @@ function Icon({ name, size = 20, strokeWidth = 1.8 }) {
         <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
       </>
     ),
-    arrow: (
-      <>
-        <path d="M5 12h14M13 6l6 6-6 6" />
-      </>
-    ),
+    arrow: <path d="M5 12h14M13 6l6 6-6 6" />,
     chevron: <path d="m9 18 6-6-6-6" />,
-    plus: (
-      <>
-        <path d="M12 5v14M5 12h14" />
-      </>
-    ),
+    plus: <path d="M12 5v14M5 12h14" />,
     clock: (
       <>
         <circle cx="12" cy="12" r="9" />
@@ -192,16 +200,8 @@ function Icon({ name, size = 20, strokeWidth = 1.8 }) {
         <path d="M8 10V7a4 4 0 1 1 8 0v3" />
       </>
     ),
-    menu: (
-      <>
-        <path d="M4 6h16M4 12h16M4 18h16" />
-      </>
-    ),
-    close: (
-      <>
-        <path d="m6 6 12 12M18 6 6 18" />
-      </>
-    ),
+    menu: <path d="M4 6h16M4 12h16M4 18h16" />,
+    close: <path d="m6 6 12 12M18 6 6 18" />,
     upload: (
       <>
         <path d="M12 16V4m-4 4 4-4 4 4" />
@@ -216,6 +216,7 @@ function Icon({ name, size = 20, strokeWidth = 1.8 }) {
       </>
     ),
   };
+
   return (
     <svg
       width={size}
@@ -379,6 +380,17 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
+  const [folders, setFolders] = useState([]);
+  const [files, setFiles] = useState([]);
+  const [foldersLoading, setFoldersLoading] = useState(false);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [foldersError, setFoldersError] = useState("");
+  const [filesError, setFilesError] = useState("");
+  const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [createFolderError, setCreateFolderError] = useState("");
+
   const checkSession = useCallback(async () => {
     setAuthStatus("loading");
     setAuthError("");
@@ -405,6 +417,148 @@ export default function App() {
   useEffect(() => {
     checkSession();
   }, [checkSession]);
+
+  const loadFolders = useCallback(async () => {
+    setFoldersLoading(true);
+    setFoldersError("");
+
+    try {
+      const data = await resourcesApi.getFolders();
+      const backendFolders = Array.isArray(data.folders) ? data.folders : [];
+
+      const mappedFolders = backendFolders.map((folder) => ({
+        ...folder,
+        id: folder._id,
+        subject: "Course materials",
+        initials: getFolderInitials(folder.name),
+        tone: getFolderTone(folder.name),
+        count: 0,
+      }));
+
+      setFolders(mappedFolders);
+      return mappedFolders;
+    } catch (error) {
+      setFoldersError(getErrorMessage(error, "Unable to load your folders."));
+      throw error;
+    } finally {
+      setFoldersLoading(false);
+    }
+  }, []);
+
+  const loadFiles = useCallback(async (folderList) => {
+    setFilesLoading(true);
+    setFilesError("");
+
+    try {
+      const results = await Promise.allSettled(
+        folderList.map(async (folder) => {
+          const data = await resourcesApi.getFiles(folder._id);
+          const folderFiles = Array.isArray(data.files) ? data.files : [];
+
+          return {
+            folder,
+            files: folderFiles.map((file) => ({
+              ...file,
+              id: file._id,
+              folderId: folder._id,
+              folder: folder.name,
+              type: getFileType(file.mimeType || ""),
+              updated: formatDate(file.updatedAt || file.createdAt),
+              sizeLabel: formatFileSize(file.size),
+            })),
+          };
+        }),
+      );
+
+      const loadedFiles = [];
+      const failedRequests = [];
+
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") {
+          const { folder, files: folderFiles } = result.value;
+
+          loadedFiles.push(...folderFiles);
+
+          setFolders((currentFolders) =>
+            currentFolders.map((item) =>
+              item.id === folder.id
+                ? { ...item, count: folderFiles.length }
+                : item,
+            ),
+          );
+        } else {
+          failedRequests.push(folderList[index].name);
+        }
+      });
+
+      loadedFiles.sort(
+        (a, b) =>
+          new Date(b.createdAt || 0).getTime() -
+          new Date(a.createdAt || 0).getTime(),
+      );
+
+      setFiles(loadedFiles);
+
+      if (failedRequests.length > 0) {
+        setFilesError(
+          `Couldn't load files from ${failedRequests.join(", ")}. Try refreshing.`,
+        );
+      }
+    } catch (error) {
+      setFilesError(getErrorMessage(error, "Unable to load your files."));
+    } finally {
+      setFilesLoading(false);
+    }
+  }, []);
+
+  async function handleCreateFolder(event) {
+    event.preventDefault();
+
+    const name = newFolderName.trim();
+
+    if (!name) {
+      setCreateFolderError("Please enter a folder name.");
+      return;
+    }
+
+    if (isCreatingFolder) return;
+
+    setIsCreatingFolder(true);
+    setCreateFolderError("");
+
+    try {
+      await resourcesApi.createFolder(name);
+
+      setNewFolderName("");
+      setShowCreateFolder(false);
+
+      await refreshResources();
+    } catch (error) {
+      setCreateFolderError(
+        getErrorMessage(
+          error,
+          "Unable to create the folder. Please try again.",
+        ),
+      );
+    } finally {
+      setIsCreatingFolder(false);
+    }
+  }
+
+  const refreshResources = useCallback(async () => {
+    try {
+      const loadedFolders = await loadFolders();
+      await loadFiles(loadedFolders);
+    } catch {
+      // loadFolders already sets the visible error state.
+    }
+  }, [loadFolders, loadFiles]);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated") return;
+
+    refreshResources();
+  }, [authStatus, refreshResources]);
 
   async function handleLogin(credentials) {
     try {
@@ -444,6 +598,8 @@ export default function App() {
 
       setUser(null);
       setAuthStatus("unauthenticated");
+      setFolders([]);
+      setFiles([]);
       setActivePage("dashboard");
       setSearch("");
       setMobileNavOpen(false);
@@ -457,23 +613,25 @@ export default function App() {
   }
 
   const activeModule = modules.find((module) => module.id === activePage);
+
   const filteredFolders = useMemo(
     () =>
-      sampleFolders.filter((folder) =>
-        `${folder.name} ${folder.subject}`
+      folders.filter((folder) =>
+        `${folder.name ?? ""} ${folder.subject ?? ""}`
           .toLowerCase()
           .includes(search.toLowerCase()),
       ),
-    [search],
+    [folders, search],
   );
+
   const filteredFiles = useMemo(
     () =>
-      sampleFiles.filter((file) =>
-        `${file.name} ${file.folder}`
+      files.filter((file) =>
+        `${file.name ?? ""} ${file.folder ?? ""}`
           .toLowerCase()
           .includes(search.toLowerCase()),
       ),
-    [search],
+    [files, search],
   );
 
   const navigate = (page) => {
@@ -528,6 +686,86 @@ export default function App() {
     return <AuthPage onLogin={handleLogin} onSignup={handleSignup} />;
   }
 
+  const renderFolderCard = (folder, showOpenButton = true) => (
+    <article className="folder-card" key={folder.id}>
+      <div className={`folder-monogram folder-${folder.tone}`}>
+        {folder.initials}
+      </div>
+      <div className="folder-info">
+        <h3>{folder.name}</h3>
+        <p>{folder.subject}</p>
+        <span>
+          {folder.count} {folder.count === 1 ? "item" : "items"}
+        </span>
+      </div>
+      {showOpenButton && (
+        <button
+          className="folder-open"
+          onClick={() => navigate("resources")}
+          aria-label={`View ${folder.name}`}
+        >
+          <Icon name="chevron" size={17} />
+        </button>
+      )}
+    </article>
+  );
+
+  const renderFileRow = (file) => (
+    <div className="file-row" key={file.id}>
+      <div className="file-primary">
+        <span className="file-type-icon">{file.type}</span>
+        <div>
+          <strong>{file.name}</strong>
+          <span>{file.type} document</span>
+        </div>
+      </div>
+      <span className="file-folder">{file.folder}</span>
+      <span className="file-updated">{file.updated}</span>
+      <span className="file-size">{file.sizeLabel}</span>
+      <button
+        className="file-more"
+        aria-label={`Actions for ${file.name}`}
+        disabled
+        title="File actions will be added in a later step"
+      >
+        <Icon name="dots" size={18} />
+      </button>
+    </div>
+  );
+
+  const renderFileTable = (visibleFiles) => (
+    <div className="file-table">
+      <div className="file-table-head">
+        <span>FILE</span>
+        <span>FOLDER</span>
+        <span>UPDATED</span>
+        <span>SIZE</span>
+        <span />
+      </div>
+      {visibleFiles.map(renderFileRow)}
+    </div>
+  );
+
+  const renderFolderLoading = () => (
+    <div className="empty-state" role="status">
+      Loading your folders...
+    </div>
+  );
+
+  const renderFolderError = () => (
+    <div className="empty-state" role="alert">
+      <p>{foldersError}</p>
+      <button
+        className="button-secondary"
+        type="button"
+        onClick={refreshResources}
+        disabled={foldersLoading}
+      >
+        {foldersLoading ? "Retrying..." : "Retry"}
+      </button>
+    </div>
+  );
+
   return (
     <div className="app-shell">
       {mobileNavOpen && (
@@ -537,9 +775,11 @@ export default function App() {
           aria-label="Close navigation"
         />
       )}
+
       <aside className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""}`}>
         <Brand />
         <div className="sidebar-section-label">MENU</div>
+
         <nav className="sidebar-nav" aria-label="Main navigation">
           {navItems.map((item) => (
             <div key={item.id}>
@@ -559,6 +799,7 @@ export default function App() {
             </div>
           ))}
         </nav>
+
         <div className="sidebar-bottom">
           <div className="sidebar-promo">
             <div className="promo-icon">
@@ -567,6 +808,7 @@ export default function App() {
             <strong>One space. More progress.</strong>
             <p>Your tools for college, learning and what's next.</p>
           </div>
+
           <button
             className={`nav-item ${activePage === "profile" ? "nav-item-active" : ""}`}
             onClick={() => navigate("profile")}
@@ -574,6 +816,7 @@ export default function App() {
             <Icon name="user" size={18} />
             <span>Profile</span>
           </button>
+
           <button
             className={`nav-item ${activePage === "settings" ? "nav-item-active" : ""}`}
             onClick={() => navigate("settings")}
@@ -586,12 +829,10 @@ export default function App() {
             <div className="account-avatar">
               {user?.name?.trim()?.charAt(0)?.toUpperCase() || "C"}
             </div>
-
             <div className="account-copy">
               <strong>{user?.name || "Campus OS"}</strong>
               <span>{user?.email || "Student workspace"}</span>
             </div>
-
             <button
               className="account-more"
               type="button"
@@ -615,6 +856,7 @@ export default function App() {
           >
             <Icon name="menu" size={21} />
           </button>
+
           <div className="breadcrumbs">
             <span>Workspace</span>
             <Icon name="chevron" size={14} />
@@ -629,6 +871,7 @@ export default function App() {
                       : "Academic resources")}
             </strong>
           </div>
+
           <div className="topbar-right">
             <label className="search-field">
               <Icon name="search" size={17} />
@@ -636,10 +879,11 @@ export default function App() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search resources..."
-                aria-label="Search sample resources"
+                aria-label="Search academic resources"
               />
               <kbd>⌘ K</kbd>
             </label>
+
             <button className="notification-button" aria-label="Notifications">
               <Icon name="bell" size={18} />
               <span />
@@ -709,52 +953,109 @@ export default function App() {
                 Back to overview
               </button>
             </div>
-            <div className="preview-notice">
-              <Icon name="file" size={18} />
-              <div>
-                <strong>Preview data</strong>
-                <p>
-                  These folders and files are sample content. The next step is
-                  connecting this page to your existing folder and file APIs.
-                </p>
-              </div>
-            </div>
+
             <section className="content-section">
               <div className="section-heading">
                 <div>
                   <h2>Your folders</h2>
                   <p>Organize resources by subject or semester.</p>
                 </div>
-                <span className="section-count">
-                  {filteredFolders.length} folders
-                </span>
+
+                <div className="folder-heading-actions">
+                  <span className="section-count">
+                    {foldersLoading
+                      ? "Loading..."
+                      : `${filteredFolders.length} folders`}
+                  </span>
+
+                  <button
+                    className="button-primary"
+                    type="button"
+                    onClick={() => {
+                      setCreateFolderError("");
+                      setNewFolderName("");
+                      setShowCreateFolder(true);
+                    }}
+                    disabled={foldersLoading || isCreatingFolder}
+                  >
+                    <Icon name="plus" size={17} />
+                    New Folder
+                  </button>
+                </div>
               </div>
-              <div className="folder-grid">
-                {filteredFolders.map((folder) => (
-                  <article className="folder-card" key={folder.id}>
-                    <div className={`folder-monogram folder-${folder.tone}`}>
-                      {folder.initials}
-                    </div>
-                    <div className="folder-info">
-                      <h3>{folder.name}</h3>
-                      <p>{folder.subject}</p>
-                      <span>{folder.count} sample items</span>
-                    </div>
+
+              {showCreateFolder && (
+                <form
+                  className="create-folder-form"
+                  onSubmit={handleCreateFolder}
+                >
+                  <label htmlFor="new-folder-name">Folder name</label>
+
+                  <input
+                    id="new-folder-name"
+                    type="text"
+                    value={newFolderName}
+                    onChange={(event) => {
+                      setNewFolderName(event.target.value);
+                      setCreateFolderError("");
+                    }}
+                    placeholder="e.g. Semester 5"
+                    maxLength={100}
+                    autoFocus
+                    required
+                    disabled={isCreatingFolder}
+                  />
+
+                  {createFolderError && (
+                    <p className="form-error" role="alert">
+                      {createFolderError}
+                    </p>
+                  )}
+
+                  <div className="create-folder-actions">
                     <button
-                      className="folder-open"
-                      aria-label={`Open ${folder.name}`}
+                      className="button-secondary"
+                      type="button"
+                      onClick={() => {
+                        setShowCreateFolder(false);
+                        setNewFolderName("");
+                        setCreateFolderError("");
+                      }}
+                      disabled={isCreatingFolder}
                     >
-                      <Icon name="chevron" size={17} />
+                      Cancel
                     </button>
-                  </article>
-                ))}
-                {filteredFolders.length === 0 && (
-                  <div className="empty-state">
-                    No sample folders match “{search}”.
+
+                    <button
+                      className="button-primary"
+                      type="submit"
+                      disabled={isCreatingFolder || !newFolderName.trim()}
+                    >
+                      {isCreatingFolder ? "Creating..." : "Create folder"}
+                    </button>
                   </div>
-                )}
-              </div>
+                </form>
+              )}
+
+              {foldersLoading ? (
+                renderFolderLoading()
+              ) : foldersError ? (
+                renderFolderError()
+              ) : (
+                <div className="folder-grid">
+                  {filteredFolders.map((folder) => renderFolderCard(folder))}
+
+                  {filteredFolders.length === 0 && (
+                    <div className="empty-state">
+                      {search
+                        ? `No folders match "${search}".`
+                        : "You don't have any folders yet. Your folders will appear here once you create them."}
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
+
             <section className="content-section">
               <div className="section-heading">
                 <div>
@@ -762,43 +1063,42 @@ export default function App() {
                   <p>Pick up where you left off.</p>
                 </div>
                 <span className="section-count">
-                  {filteredFiles.length} files
+                  {filesLoading
+                    ? "Loading..."
+                    : `${filteredFiles.length} files`}
                 </span>
               </div>
-              <div className="file-table">
-                <div className="file-table-head">
-                  <span>FILE</span>
-                  <span>FOLDER</span>
-                  <span>UPDATED</span>
-                  <span>SIZE</span>
-                  <span />
+
+              {filesError && (
+                <div className="empty-state" role="alert">
+                  <p>{filesError}</p>
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    onClick={refreshResources}
+                    disabled={filesLoading || foldersLoading}
+                  >
+                    Refresh resources
+                  </button>
                 </div>
-                {filteredFiles.map((file) => (
-                  <div className="file-row" key={file.id}>
-                    <div className="file-primary">
-                      <span className="file-type-icon">PDF</span>
-                      <div>
-                        <strong>{file.name}</strong>
-                        <span>{file.type} document</span>
-                      </div>
+              )}
+
+              {filesLoading ? (
+                <div className="empty-state" role="status">
+                  Loading your files...
+                </div>
+              ) : (
+                <>
+                  {renderFileTable(filteredFiles)}
+                  {filteredFiles.length === 0 && !filesError && (
+                    <div className="empty-state">
+                      {search
+                        ? `No files match "${search}".`
+                        : "No files to show yet. Files inside your folders will appear here."}
                     </div>
-                    <span className="file-folder">{file.folder}</span>
-                    <span className="file-updated">{file.updated}</span>
-                    <span className="file-size">{file.size}</span>
-                    <button
-                      className="file-more"
-                      aria-label={`Actions for ${file.name}`}
-                    >
-                      <Icon name="dots" size={18} />
-                    </button>
-                  </div>
-                ))}
-                {filteredFiles.length === 0 && (
-                  <div className="empty-state">
-                    No sample files match “{search}”.
-                  </div>
-                )}
-              </div>
+                  )}
+                </>
+              )}
             </section>
           </div>
         ) : (
@@ -831,6 +1131,7 @@ export default function App() {
                   </span>
                 </div>
               </div>
+
               <div className="welcome-visual" aria-hidden="true">
                 <div className="visual-glow" />
                 <div className="visual-orbit visual-orbit-one" />
@@ -886,6 +1187,7 @@ export default function App() {
                 </div>
                 <span className="section-count">4 modules</span>
               </div>
+
               <div className="modules-grid">
                 {modules.map((module) => (
                   <ModuleCard
@@ -913,27 +1215,24 @@ export default function App() {
                   View workspace <Icon name="arrow" size={16} />
                 </button>
               </div>
-              <div className="folder-grid">
-                {sampleFolders.slice(0, 3).map((folder) => (
-                  <article className="folder-card" key={folder.id}>
-                    <div className={`folder-monogram folder-${folder.tone}`}>
-                      {folder.initials}
+
+              {foldersLoading ? (
+                renderFolderLoading()
+              ) : foldersError ? (
+                renderFolderError()
+              ) : (
+                <div className="folder-grid">
+                  {folders
+                    .slice(0, 3)
+                    .map((folder) => renderFolderCard(folder))}
+                  {folders.length === 0 && (
+                    <div className="empty-state">
+                      You don't have any folders yet. Create folders to organize
+                      your academic resources.
                     </div>
-                    <div className="folder-info">
-                      <h3>{folder.name}</h3>
-                      <p>{folder.subject}</p>
-                      <span>{folder.count} sample items</span>
-                    </div>
-                    <button
-                      className="folder-open"
-                      onClick={() => navigate("resources")}
-                      aria-label={`View ${folder.name}`}
-                    >
-                      <Icon name="chevron" size={17} />
-                    </button>
-                  </article>
-                ))}
-              </div>
+                  )}
+                </div>
+              )}
             </section>
 
             <section className="content-section recent-section">
@@ -949,36 +1248,37 @@ export default function App() {
                   All resources <Icon name="arrow" size={16} />
                 </button>
               </div>
-              <div className="file-table">
-                <div className="file-table-head">
-                  <span>FILE</span>
-                  <span>FOLDER</span>
-                  <span>UPDATED</span>
-                  <span>SIZE</span>
-                  <span />
+
+              {filesLoading ? (
+                <div className="empty-state" role="status">
+                  Loading your files...
                 </div>
-                {sampleFiles.slice(0, 3).map((file) => (
-                  <div className="file-row" key={file.id}>
-                    <div className="file-primary">
-                      <span className="file-type-icon">PDF</span>
-                      <div>
-                        <strong>{file.name}</strong>
-                        <span>{file.type} document</span>
-                      </div>
+              ) : (
+                <>
+                  {renderFileTable(files.slice(0, 3))}
+                  {files.length === 0 && (
+                    <div className="empty-state">
+                      No files to show yet. Files inside your folders will
+                      appear here.
                     </div>
-                    <span className="file-folder">{file.folder}</span>
-                    <span className="file-updated">{file.updated}</span>
-                    <span className="file-size">{file.size}</span>
-                    <button
-                      className="file-more"
-                      aria-label={`Actions for ${file.name}`}
-                    >
-                      <Icon name="dots" size={18} />
-                    </button>
-                  </div>
-                ))}
-              </div>
+                  )}
+                  {filesError && (
+                    <div className="empty-state" role="alert">
+                      <p>{filesError}</p>
+                      <button
+                        className="button-secondary"
+                        type="button"
+                        onClick={refreshResources}
+                        disabled={filesLoading || foldersLoading}
+                      >
+                        Refresh resources
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
             </section>
+
             <footer className="page-footer">
               <span>
                 Campus OS <span className="footer-dot">·</span> Your academic
