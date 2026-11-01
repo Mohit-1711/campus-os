@@ -1,10 +1,17 @@
 const mongoose = require("mongoose");
+
 const Chat = require("../models/chatModel");
 const File = require("../models/fileModel");
 const Message = require("../models/messageModel");
+const DocumentChunk = require("../models/documentChunkModel");
+
+const cloudinary = require("../config/cloudinary");
+
 const { retrieveRelevantChunks } = require("../utils/documentRetriever");
+
 const { generateGeminiResponse } = require("../utils/gemini");
 
+// CREATE CHAT
 async function createChat(req, res, next) {
   try {
     const { title, files } = req.body;
@@ -32,6 +39,7 @@ async function createChat(req, res, next) {
       });
     }
 
+    // Remove duplicate file IDs.
     const uniqueFileIds = [...new Set(files.map(String))];
 
     if (uniqueFileIds.length !== files.length) {
@@ -40,7 +48,7 @@ async function createChat(req, res, next) {
       });
     }
 
-    // Only allow documents owned by the logged-in user and ready for retrieval.
+    // Verify ownership and document readiness.
     const selectedFiles = await File.find({
       _id: { $in: uniqueFileIds },
       user: req.user.userId,
@@ -69,6 +77,7 @@ async function createChat(req, res, next) {
   }
 }
 
+// GET ALL CHATS
 async function listChats(req, res, next) {
   try {
     const page = Number(req.query.page) || 1;
@@ -114,6 +123,7 @@ async function listChats(req, res, next) {
   }
 }
 
+// GET CHAT MESSAGE HISTORY
 async function getChatMessages(req, res, next) {
   try {
     const { chatId } = req.params;
@@ -183,6 +193,7 @@ async function getChatMessages(req, res, next) {
   }
 }
 
+// SEND MESSAGE AND GENERATE AI RESPONSE
 async function sendMessage(req, res, next) {
   try {
     const { chatId } = req.params;
@@ -206,7 +217,7 @@ async function sendMessage(req, res, next) {
       });
     }
 
-    // Verify that the chat belongs to the logged-in user.
+    // Verify chat ownership.
     const chat = await Chat.findOne({
       _id: chatId,
       user: req.user.userId,
@@ -231,6 +242,7 @@ async function sendMessage(req, res, next) {
       fileIds: chat.files,
     });
 
+    // Handle questions with no relevant document content.
     if (relevantChunks.length === 0) {
       const userMessage = await Message.create({
         chat: chat._id,
@@ -299,7 +311,7 @@ ANSWER:
       content: answer,
     });
 
-    // Update chat timestamp so it appears first in the chat list.
+    // Update chat timestamp.
     chat.updatedAt = new Date();
     await chat.save();
 
@@ -313,4 +325,108 @@ ANSWER:
   }
 }
 
-module.exports = { createChat, listChats, sendMessage, getChatMessages };
+// DELETE CHAT
+async function deleteChat(req, res, next) {
+  try {
+    const { chatId } = req.params;
+
+    // Validate chat ID.
+    if (!mongoose.Types.ObjectId.isValid(chatId)) {
+      return res.status(400).json({
+        message: "Invalid chat ID.",
+      });
+    }
+
+    // Verify chat ownership.
+    const chat = await Chat.findOne({
+      _id: chatId,
+      user: req.user.userId,
+    });
+
+    if (!chat) {
+      return res.status(404).json({
+        message: "Chat not found.",
+      });
+    }
+
+    // Find AI-uploaded files attached to this chat.
+    const aiFiles = await File.find({
+      _id: { $in: chat.files },
+      user: req.user.userId,
+      source: "ai_upload",
+    });
+
+    // Find other chats that reference any of these files.
+    const otherChats = await Chat.find({
+      _id: { $ne: chat._id },
+      user: req.user.userId,
+      files: { $in: aiFiles.map((file) => file._id) },
+    })
+      .select("files")
+      .lean();
+
+    // Collect file IDs referenced by other chats.
+    const referencedFileIds = new Set(
+      otherChats.flatMap((otherChat) =>
+        otherChat.files.map((fileId) => fileId.toString()),
+      ),
+    );
+
+    // Only delete AI-uploaded files not used by other chats.
+    const filesToDelete = aiFiles.filter(
+      (file) => !referencedFileIds.has(file._id.toString()),
+    );
+
+    // Delete Cloudinary assets first.
+    // Preserve database records if Cloudinary deletion fails.
+    for (const file of filesToDelete) {
+      const result = await cloudinary.uploader.destroy(
+        file.cloudinaryPublicId,
+        {
+          resource_type: file.cloudinaryResourceType,
+        },
+      );
+
+      if (result.result !== "ok" && result.result !== "not found") {
+        const error = new Error("Could not confirm Cloudinary asset deletion.");
+
+        error.statusCode = 502;
+        return next(error);
+      }
+    }
+
+    // Remove chunks and file records for eligible AI uploads.
+    if (filesToDelete.length > 0) {
+      const fileIds = filesToDelete.map((file) => file._id);
+
+      await DocumentChunk.deleteMany({
+        user: req.user.userId,
+        file: { $in: fileIds },
+      });
+
+      await File.deleteMany({
+        user: req.user.userId,
+        _id: { $in: fileIds },
+        source: "ai_upload",
+      });
+    }
+
+    // Delete chat messages and the chat itself.
+    await Message.deleteMany({ chat: chat._id });
+    await chat.deleteOne();
+
+    return res.status(200).json({
+      message: "Chat deleted successfully.",
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+module.exports = {
+  createChat,
+  listChats,
+  getChatMessages,
+  sendMessage,
+  deleteChat,
+};
