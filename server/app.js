@@ -8,6 +8,8 @@ const { router: fileRoutes } = require("./routes/fileRoutes");
 const handleError = require("./middlewares/errorHandler");
 const handleAuth = require("./middlewares/authMiddleware");
 
+const { router: aiRoutes } = require("./routes/aiRoutes");
+
 const app = express();
 
 const allowedOrigin = process.env.CLIENT_ORIGIN || "http://localhost:5173";
@@ -31,6 +33,7 @@ app.get("/api/health", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/folder", handleAuth, folderRoutes);
 app.use("/api/folder", handleAuth, fileRoutes);
+app.use("/api/ai", handleAuth, aiRoutes);
 
 app.use(handleError);
 

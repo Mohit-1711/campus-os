@@ -50,6 +50,19 @@ const fileSchema = mongoose.Schema(
       required: true,
       enum: ["image", "raw", "video"],
     },
+    source: {
+      type: String,
+      enum: ["folder_upload", "ai_upload"],
+      default: "folder_upload",
+      required: true,
+    },
+
+    processingStatus: {
+      type: String,
+      enum: ["not_required", "pending", "ready", "failed"],
+      default: "not_required",
+      required: true,
+    },
   },
   { timestamps: true },
 );
