@@ -9,6 +9,7 @@ const handleError = require("./middlewares/errorHandler");
 const handleAuth = require("./middlewares/authMiddleware");
 
 const { router: aiRoutes } = require("./routes/aiRoutes");
+const { router: chatRoutes } = require("./routes/chatRoutes");
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/folder", handleAuth, folderRoutes);
 app.use("/api/folder", handleAuth, fileRoutes);
 app.use("/api/ai", handleAuth, aiRoutes);
+app.use("/api/chats", handleAuth, chatRoutes);
 
 app.use(handleError);
 
