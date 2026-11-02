@@ -3,6 +3,7 @@ import AuthPage from "./AuthPage";
 import { authApi } from "./api/auth";
 import { resourcesApi } from "./api/resources";
 import "./App.css";
+import AssistantPage from "./AssistantPage";
 
 const modules = [
   {
@@ -21,7 +22,7 @@ const modules = [
     description:
       "Understand difficult topics and revise from your own study material.",
     icon: "sparkles",
-    status: "coming-soon",
+    status: "available",
     accent: "blue",
     eyebrow: "LEARN SMARTER",
   },
@@ -382,6 +383,9 @@ export default function App() {
 
   const [folders, setFolders] = useState([]);
   const [files, setFiles] = useState([]);
+  const [activeFolderId, setActiveFolderId] = useState(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const [foldersLoading, setFoldersLoading] = useState(false);
   const [filesLoading, setFilesLoading] = useState(false);
   const [foldersError, setFoldersError] = useState("");
@@ -545,6 +549,29 @@ export default function App() {
     }
   }
 
+  async function handleFileUpload(event) {
+    const file = event.target.files?.[0];
+
+    // Allow selecting the same file again later.
+    event.target.value = "";
+
+    if (!file || !activeFolderId || isUploadingFile) return;
+
+    setIsUploadingFile(true);
+    setUploadError("");
+
+    try {
+      await resourcesApi.uploadFile(activeFolderId, file);
+      await refreshResources();
+    } catch (error) {
+      setUploadError(
+        getErrorMessage(error, "Unable to upload the file. Please try again."),
+      );
+    } finally {
+      setIsUploadingFile(false);
+    }
+  }
+
   const refreshResources = useCallback(async () => {
     try {
       const loadedFolders = await loadFolders();
@@ -613,6 +640,7 @@ export default function App() {
   }
 
   const activeModule = modules.find((module) => module.id === activePage);
+  const activeFolder = folders.find((folder) => folder.id === activeFolderId);
 
   const filteredFolders = useMemo(
     () =>
@@ -652,7 +680,6 @@ export default function App() {
       id: "study-assistant",
       label: "AI study assistant",
       icon: "sparkles",
-      soon: true,
     },
     {
       id: "resume-builder",
@@ -701,8 +728,12 @@ export default function App() {
       {showOpenButton && (
         <button
           className="folder-open"
-          onClick={() => navigate("resources")}
-          aria-label={`View ${folder.name}`}
+          onClick={() => {
+            setActiveFolderId(folder.id);
+            setUploadError("");
+            setSearch("");
+          }}
+          aria-label={`Open ${folder.name}`}
         >
           <Icon name="chevron" size={17} />
         </button>
@@ -715,7 +746,20 @@ export default function App() {
       <div className="file-primary">
         <span className="file-type-icon">{file.type}</span>
         <div>
-          <strong>{file.name}</strong>
+          <strong>
+            {file.cloudinaryUrl ? (
+              <a
+                href={file.cloudinaryUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="file-open-link"
+              >
+                {file.name}
+              </a>
+            ) : (
+              file.name
+            )}
+          </strong>
           <span>{file.type} document</span>
         </div>
       </div>
@@ -904,6 +948,8 @@ export default function App() {
             module={activeModule}
             onBack={() => navigate("dashboard")}
           />
+        ) : activePage === "study-assistant" ? (
+          <AssistantPage />
         ) : activePage === "profile" || activePage === "settings" ? (
           <div className="page-content">
             <div className="page-title">
@@ -953,108 +999,169 @@ export default function App() {
                 Back to overview
               </button>
             </div>
-
-            <section className="content-section">
-              <div className="section-heading">
-                <div>
-                  <h2>Your folders</h2>
-                  <p>Organize resources by subject or semester.</p>
-                </div>
-
-                <div className="folder-heading-actions">
-                  <span className="section-count">
-                    {foldersLoading
-                      ? "Loading..."
-                      : `${filteredFolders.length} folders`}
-                  </span>
-
-                  <button
-                    className="button-primary"
-                    type="button"
-                    onClick={() => {
-                      setCreateFolderError("");
-                      setNewFolderName("");
-                      setShowCreateFolder(true);
-                    }}
-                    disabled={foldersLoading || isCreatingFolder}
-                  >
-                    <Icon name="plus" size={17} />
-                    New Folder
-                  </button>
-                </div>
-              </div>
-
-              {showCreateFolder && (
-                <form
-                  className="create-folder-form"
-                  onSubmit={handleCreateFolder}
-                >
-                  <label htmlFor="new-folder-name">Folder name</label>
-
-                  <input
-                    id="new-folder-name"
-                    type="text"
-                    value={newFolderName}
-                    onChange={(event) => {
-                      setNewFolderName(event.target.value);
-                      setCreateFolderError("");
-                    }}
-                    placeholder="e.g. Semester 5"
-                    maxLength={100}
-                    autoFocus
-                    required
-                    disabled={isCreatingFolder}
-                  />
-
-                  {createFolderError && (
-                    <p className="form-error" role="alert">
-                      {createFolderError}
-                    </p>
-                  )}
-
-                  <div className="create-folder-actions">
+            {activeFolder && (
+              <section className="content-section folder-detail-section">
+                <div className="section-heading folder-detail-heading">
+                  <div>
                     <button
-                      className="button-secondary"
+                      className="back-link"
                       type="button"
                       onClick={() => {
-                        setShowCreateFolder(false);
-                        setNewFolderName("");
-                        setCreateFolderError("");
+                        setActiveFolderId(null);
+                        setUploadError("");
+                        setSearch("");
                       }}
-                      disabled={isCreatingFolder}
                     >
-                      Cancel
+                      ← <span>Back to folders</span>
                     </button>
+
+                    <h2>{activeFolder.name}</h2>
+                    <p>Files and study material in this folder.</p>
+                  </div>
+
+                  <label className="button-primary upload-file-button">
+                    <Icon name="upload" size={17} />
+                    {isUploadingFile ? "Uploading..." : "Upload file"}
+
+                    <input
+                      type="file"
+                      hidden
+                      onChange={handleFileUpload}
+                      disabled={isUploadingFile}
+                    />
+                  </label>
+                </div>
+
+                {uploadError && (
+                  <div className="empty-state" role="alert">
+                    {uploadError}
+                  </div>
+                )}
+
+                {filesLoading ? (
+                  <div className="empty-state" role="status">
+                    Loading folder files...
+                  </div>
+                ) : (
+                  <>
+                    {renderFileTable(
+                      files.filter((file) => file.folderId === activeFolder.id),
+                    )}
+
+                    {files.filter((file) => file.folderId === activeFolder.id)
+                      .length === 0 && (
+                      <div className="empty-state">
+                        This folder is empty. Upload your first file to get
+                        started.
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+            )}
+            {!activeFolder && (
+              <section className="content-section">
+                <div className="section-heading">
+                  <div>
+                    <h2>Your folders</h2>
+                    <p>Organize resources by subject or semester.</p>
+                  </div>
+
+                  <div className="folder-heading-actions">
+                    <span className="section-count">
+                      {foldersLoading
+                        ? "Loading..."
+                        : `${filteredFolders.length} folders`}
+                    </span>
 
                     <button
                       className="button-primary"
-                      type="submit"
-                      disabled={isCreatingFolder || !newFolderName.trim()}
+                      type="button"
+                      onClick={() => {
+                        setCreateFolderError("");
+                        setNewFolderName("");
+                        setShowCreateFolder(true);
+                      }}
+                      disabled={foldersLoading || isCreatingFolder}
                     >
-                      {isCreatingFolder ? "Creating..." : "Create folder"}
+                      <Icon name="plus" size={17} />
+                      New Folder
                     </button>
                   </div>
-                </form>
-              )}
-
-              {foldersLoading ? (
-                renderFolderLoading()
-              ) : foldersError ? (
-                renderFolderError()
-              ) : (
-                <div className="folder-grid">
-                  {filteredFolders.map((folder) => renderFolderCard(folder))}
-
-                  {filteredFolders.length === 0 && (
-                    <div className="empty-state">
-                      {search
-                        ? `No folders match "${search}".`
-                        : "You don't have any folders yet. Your folders will appear here once you create them."}
-                    </div>
-                  )}
                 </div>
-              )}
-            </section>
+
+                {showCreateFolder && (
+                  <form
+                    className="create-folder-form"
+                    onSubmit={handleCreateFolder}
+                  >
+                    <label htmlFor="new-folder-name">Folder name</label>
+
+                    <input
+                      id="new-folder-name"
+                      type="text"
+                      value={newFolderName}
+                      onChange={(event) => {
+                        setNewFolderName(event.target.value);
+                        setCreateFolderError("");
+                      }}
+                      placeholder="e.g. Semester 5"
+                      maxLength={100}
+                      autoFocus
+                      required
+                      disabled={isCreatingFolder}
+                    />
+
+                    {createFolderError && (
+                      <p className="form-error" role="alert">
+                        {createFolderError}
+                      </p>
+                    )}
+
+                    <div className="create-folder-actions">
+                      <button
+                        className="button-secondary"
+                        type="button"
+                        onClick={() => {
+                          setShowCreateFolder(false);
+                          setNewFolderName("");
+                          setCreateFolderError("");
+                        }}
+                        disabled={isCreatingFolder}
+                      >
+                        Cancel
+                      </button>
+
+                      <button
+                        className="button-primary"
+                        type="submit"
+                        disabled={isCreatingFolder || !newFolderName.trim()}
+                      >
+                        {isCreatingFolder ? "Creating..." : "Create folder"}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {foldersLoading ? (
+                  renderFolderLoading()
+                ) : foldersError ? (
+                  renderFolderError()
+                ) : (
+                  <div className="folder-grid">
+                    {filteredFolders.map((folder) => renderFolderCard(folder))}
+
+                    {filteredFolders.length === 0 && (
+                      <div className="empty-state">
+                        {search
+                          ? `No folders match "${search}".`
+                          : "You don't have any folders yet. Your folders will appear here once you create them."}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
 
             <section className="content-section">
               <div className="section-heading">

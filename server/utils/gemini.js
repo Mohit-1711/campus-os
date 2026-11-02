@@ -32,8 +32,6 @@ async function generateGeminiResponse(prompt) {
       throw new Error("Gemini returned an empty response.");
     }
 
-    console.log(`[Gemini] Completed in ${Date.now() - startTime}ms`);
-
     return answer;
   } catch (error) {
     console.error(

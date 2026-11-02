@@ -70,7 +70,7 @@ async function listFiles(req, res, next) {
       folder: req.folder._id,
     })
       .select(
-        "name originalName mimeType size cloudinaryUrl createdAt updatedAt",
+        "name originalName mimeType size cloudinaryUrl source processingStatus createdAt updatedAt",
       )
       .sort({ createdAt: -1 })
       .lean();
