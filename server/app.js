@@ -1,42 +1,34 @@
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 const cookieParser = require("cookie-parser");
 
-const { router: authRoutes } = require("./routes/authRoutes");
-const { router: folderRoutes } = require("./routes/folderRoutes");
-const { router: fileRoutes } = require("./routes/fileRoutes");
-const handleError = require("./middlewares/errorHandler");
+const { env } = require("./config/env");
 const handleAuth = require("./middlewares/authMiddleware");
-
-const { router: aiRoutes } = require("./routes/aiRoutes");
-const { router: chatRoutes } = require("./routes/chatRoutes");
+const handleError = require("./middlewares/errorHandler");
+const { httpError } = require("./utils/httpError");
 
 const app = express();
 
-const allowedOrigin = process.env.CLIENT_ORIGIN || "http://localhost:5173";
+// Behind a proxy (Render, Railway, ...) so secure cookies and rate limits see the real client.
+if (env.isProd) app.set("trust proxy", 1);
 
-app.use(
-  cors({
-    origin: allowedOrigin,
-    credentials: true,
-  }),
-);
-
-app.use(express.json());
+app.use(helmet());
+app.use(cors({ origin: env.clientOrigins, credentials: true }));
+app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
 
 app.get("/api/health", (req, res) => {
-  res.json({
-    message: "Campus OS API is running",
-  });
+  res.json({ message: "Campus OS API is running" });
 });
 
-app.use("/api/auth", authRoutes);
-app.use("/api/folder", handleAuth, folderRoutes);
-app.use("/api/folder", handleAuth, fileRoutes);
-app.use("/api/ai", handleAuth, aiRoutes);
-app.use("/api/chats", handleAuth, chatRoutes);
+app.use("/api/auth", require("./routes/authRoutes"));
+app.use("/api/folder", handleAuth, require("./routes/folderRoutes"));
+app.use("/api/files", handleAuth, require("./routes/libraryRoutes"));
+app.use("/api/ai", handleAuth, require("./routes/aiRoutes"));
+app.use("/api/chats", handleAuth, require("./routes/chatRoutes"));
 
+app.use("/api", (req, res, next) => next(httpError(404, "Route not found")));
 app.use(handleError);
 
 module.exports = app;

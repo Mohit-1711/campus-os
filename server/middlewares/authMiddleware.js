@@ -1,23 +1,22 @@
 const jwt = require("jsonwebtoken");
+const { env } = require("../config/env");
+const { httpError } = require("../utils/httpError");
 
+/** Requires a valid session cookie and exposes the user id as req.user.userId. */
 function handleAuth(req, res, next) {
   const token = req.cookies?.token;
 
   if (!token) {
-    return res.status(401).json({
-      message: "Authentication required",
-    });
+    throw httpError(401, "Authentication required");
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    return next();
-  } catch (err) {
-    return res.status(401).json({
-      message: "Invalid or expired token",
-    });
+    req.user = jwt.verify(token, env.jwtSecret);
+  } catch {
+    throw httpError(401, "Invalid or expired session. Please log in again.");
   }
+
+  next();
 }
 
 module.exports = handleAuth;

@@ -1,0 +1,52 @@
+:root {
+  /* colour */
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-muted: #f1f2f8;
+  --border: #e4e6f0;
+  --text: #171a2e;
+  --text-muted: #5a5f7a;
+  --text-faint: #7a7f99;
+
+  --primary: #5145d2;
+  --primary-hover: #4338b8;
+  --primary-soft: #eeedfc;
+
+  --danger: #c0304a;
+  --danger-soft: #fdeff1;
+  --success: #17794d;
+  --success-soft: #e8f6ef;
+
+  /* accent tones used for folders and module icons */
+  --purple: #5145d2;
+  --purple-soft: #eeedfc;
+  --green: #17794d;
+  --green-soft: #e8f6ef;
+  --orange: #b5590b;
+  --orange-soft: #fdf0e3;
+  --blue: #1d62c4;
+  --blue-soft: #e8f1fd;
+
+  /* type */
+  --font-body: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Manrope", "DM Sans", system-ui, sans-serif;
+  --text-xs: 0.75rem; /* 12px — the smallest size used anywhere */
+  --text-sm: 0.8125rem; /* 13px */
+  --text-md: 0.9375rem; /* 15px */
+  --text-lg: 1.0625rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+
+  /* shape */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 2px rgba(23, 26, 46, 0.06);
+  --shadow: 0 8px 24px rgba(23, 26, 46, 0.08);
+  --focus-ring: 0 0 0 3px rgba(81, 69, 210, 0.28);
+
+  /* layout */
+  --sidebar-width: 268px;
+  --sidebar-collapsed-width: 76px;
+  --topbar-height: 64px;
+}

@@ -1,156 +1,102 @@
-const User = require("../models/userModel");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const User = require("../models/userModel");
+const { env } = require("../config/env");
+const { httpError } = require("../utils/httpError");
+const { requireText } = require("../utils/validate");
 
-const COOKIE_NAME = "token";
-const ONE_HOUR_MS = 60 * 60 * 1000;
+const SESSION_MS = 24 * 60 * 60 * 1000; // keep the cookie and the JWT in sync
 
 const cookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax",
+  secure: env.isProd || env.cookieSameSite === "none",
+  sameSite: env.cookieSameSite,
   path: "/",
 };
 
-async function handleSignup(req, res, next) {
-  const { name, email, password } = req.body;
+const EMAIL_PATTERN = /^\S+@\S+\.\S+$/;
 
-  if (typeof name !== "string" || !name.trim()) {
-    return res.status(400).json({
-      error: "Name cannot be empty or just spaces.",
-    });
+const normalizeEmail = (email) =>
+  typeof email === "string" ? email.trim().toLowerCase() : "";
+
+const publicUser = (user) => ({ _id: user._id, name: user.name, email: user.email });
+
+async function handleSignup(req, res) {
+  const { name, email, password } = req.body || {};
+
+  const cleanName = requireText(name, { label: "Name", max: 100 });
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!EMAIL_PATTERN.test(normalizedEmail)) {
+    throw httpError(400, "Please provide a valid email address.");
   }
 
   if (typeof password !== "string" || password.length < 6) {
-    return res.status(400).json({
-      error: "Password must be at least 6 characters long.",
-    });
+    throw httpError(400, "Password must be at least 6 characters long.");
   }
 
-  if (typeof email !== "string" || !/^\S+@\S+\.\S+$/.test(email.trim())) {
-    return res.status(400).json({
-      error: "Please provide a valid email address.",
-    });
+  if (password.length > 72) {
+    // bcrypt silently ignores everything after 72 bytes.
+    throw httpError(400, "Password cannot be longer than 72 characters.");
   }
 
-  const normalizedEmail = email.trim().toLowerCase();
-
-  try {
-    const existingUser = await User.findOne({
-      email: normalizedEmail,
-    });
-
-    if (existingUser) {
-      return res.status(409).json({
-        message: "Email already registered",
-      });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    await User.create({
-      name: name.trim(),
-      email: normalizedEmail,
-      password: hashedPassword,
-    });
-
-    return res.status(201).json({
-      message: "User registered successfully",
-    });
-  } catch (err) {
-    next(err);
+  if (await User.exists({ email: normalizedEmail })) {
+    throw httpError(409, "Email already registered");
   }
+
+  await User.create({
+    name: cleanName,
+    email: normalizedEmail,
+    password: await bcrypt.hash(password, 10),
+  });
+
+  res.status(201).json({ message: "User registered successfully" });
 }
 
-async function handleLogin(req, res, next) {
-  const { email, password } = req.body;
+async function handleLogin(req, res) {
+  const { email, password } = req.body || {};
+  const normalizedEmail = normalizeEmail(email);
 
-  if (!email) {
-    return res.status(400).json({
-      message: "Please enter your email address.",
-    });
+  if (!normalizedEmail) {
+    throw httpError(400, "Please enter your email address.");
   }
 
-  if (!password) {
-    return res.status(400).json({
-      message: "Please enter a password.",
-    });
+  if (typeof password !== "string" || !password) {
+    throw httpError(400, "Please enter your password.");
   }
 
-  try {
-    const userFound = await User.findOne({ email });
+  const user = await User.findOne({ email: normalizedEmail });
+  const passwordMatches = user && (await bcrypt.compare(password, user.password));
 
-    if (!userFound) {
-      return res.status(401).json({
-        message: "Invalid email or password",
-      });
-    }
-
-    const isPasswordValid = await bcrypt.compare(password, userFound.password);
-
-    if (!isPasswordValid) {
-      return res.status(401).json({
-        message: "Invalid email or password",
-      });
-    }
-
-    const token = jwt.sign({ userId: userFound._id }, process.env.JWT_SECRET, {
-      expiresIn: "1h",
-    });
-
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 1000,
-      path: "/",
-    });
-
-    return res.status(200).json({
-      message: "Logged in successfully",
-    });
-  } catch (err) {
-    return next(err);
+  // Same message for both cases so attackers can't tell which emails exist.
+  if (!passwordMatches) {
+    throw httpError(401, "Invalid email or password");
   }
+
+  const token = jwt.sign({ userId: user._id }, env.jwtSecret, {
+    expiresIn: SESSION_MS / 1000,
+  });
+
+  res.cookie("token", token, { ...cookieOptions, maxAge: SESSION_MS });
+
+  res.status(200).json({ message: "Logged in successfully", user: publicUser(user) });
 }
 
 function handleLogout(req, res) {
-  res.clearCookie("token", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-  });
-
-  return res.status(200).json({
-    message: "Logged out successfully",
-  });
+  res.clearCookie("token", cookieOptions);
+  res.status(200).json({ message: "Logged out successfully" });
 }
 
-async function handleGetMe(req, res, next) {
-  try {
-    const userId = req.user.userId;
+async function handleGetMe(req, res) {
+  const user = await User.findById(req.user.userId);
 
-    const user = await User.findById(userId).select("-password");
-
-    if (!user) {
-      return res.status(404).json({
-        message: "User not found",
-      });
-    }
-
-    return res.status(200).json({
-      message: "User fetched successfully",
-      user,
-    });
-  } catch (err) {
-    next(err);
+  if (!user) {
+    // The account was removed while the cookie was still valid.
+    res.clearCookie("token", cookieOptions);
+    throw httpError(401, "Account not found. Please log in again.");
   }
+
+  res.status(200).json({ message: "User fetched successfully", user: publicUser(user) });
 }
 
-module.exports = {
-  handleSignup,
-  handleLogin,
-  handleLogout,
-  handleGetMe,
-};
+module.exports = { handleSignup, handleLogin, handleLogout, handleGetMe };

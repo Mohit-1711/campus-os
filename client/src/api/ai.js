@@ -1,19 +1,14 @@
-import api from "./auth";
+import api from "./client";
 
 export const aiApi = {
-  uploadDocument: async (file) => {
+  uploadDocument: (file) => {
     const formData = new FormData();
     formData.append("file", file);
 
-    const response = await api.post("/ai/documents", formData, {
-      headers: { "Content-Type": null },
-    });
-
-    return response.data;
+    return api
+      .post("/ai/documents", formData, { headers: { "Content-Type": null } })
+      .then((res) => res.data);
   },
 
-  indexDocument: async (fileId) => {
-    const response = await api.post(`/ai/documents/${fileId}/index`);
-    return response.data;
-  },
+  indexDocument: (fileId) => api.post(`/ai/documents/${fileId}/index`).then((res) => res.data),
 };

@@ -1,97 +1,59 @@
 const Folder = require("../models/folderModel");
-const User = require("../models/userModel");
+const File = require("../models/fileModel");
+const { deleteFiles } = require("../services/fileService");
+const { httpError } = require("../utils/httpError");
+const { requireText } = require("../utils/validate");
 
-async function handleCreateFolder(req, res, next) {
-  try {
-    const { name } = req.body;
+async function assertNameAvailable(userId, name, ignoreFolderId) {
+  const duplicate = await Folder.exists({
+    user: userId,
+    name,
+    ...(ignoreFolderId && { _id: { $ne: ignoreFolderId } }),
+  });
 
-    if (!name || name.trim().length === 0) {
-      return res.status(400).json({
-        message: "Folder name is required",
-      });
-    }
-
-    const folder = await Folder.create({
-      name,
-      user: req.user.userId,
-    });
-
-    return res.status(201).json({
-      message: "Folder created successfully",
-      folder,
-    });
-  } catch (error) {
-    next(error);
+  if (duplicate) {
+    throw httpError(409, `You already have a folder named "${name}".`);
   }
 }
 
-async function handleGetFolder(req, res, next) {
-  try {
-    const userId = req.user.userId;
-    const folders = await Folder.find({ user: userId });
+async function handleCreateFolder(req, res) {
+  const name = requireText(req.body?.name, { label: "Folder name" });
+  await assertNameAvailable(req.user.userId, name);
 
-    return res.status(200).json({
-      message: "Folders fetched successfully",
-      folders,
-    });
-  } catch (error) {
-    next(error);
-  }
+  const folder = await Folder.create({ name, user: req.user.userId });
+
+  res.status(201).json({ message: "Folder created successfully", folder });
 }
-async function handleRenameFolder(req, res, next) {
-  try {
-    const userId = req.user.userId;
-    const folderId = req.params.folderId;
-    const { name } = req.body;
 
-    const folder = await Folder.findOne({
-      user: userId,
-      _id: folderId,
-    });
+async function handleGetFolders(req, res) {
+  const folders = await Folder.find({ user: req.user.userId }).sort({ createdAt: -1 }).lean();
 
-    if (!folder) {
-      return res.status(404).json({
-        message: "Folder not found",
-      });
-    }
-
-    folder.name = name;
-
-    await folder.save();
-
-    return res.status(200).json({
-      message: "Folder renamed successfully",
-      folder,
-    });
-  } catch (error) {
-    next(error);
-  }
+  res.status(200).json({ message: "Folders fetched successfully", folders });
 }
-async function handleDeleteFolder(req, res, next) {
-  try {
-    const userId = req.user.userId;
-    const folderId = req.params.folderId;
-    const folder = await Folder.findOneAndDelete({
-      user: userId,
-      _id: folderId,
-    });
-    if (!folder) {
-      return res.status(404).json({
-        message: "Folder not found",
-      });
-    }
-    return res.status(204).json({
-      message: "Folder deleted successfully",
-      folder,
-    });
-  } catch (error) {
-    next(error);
-  }
+
+async function handleRenameFolder(req, res) {
+  const name = requireText(req.body?.name, { label: "Folder name" });
+  await assertNameAvailable(req.user.userId, name, req.folder._id);
+
+  req.folder.name = name;
+  await req.folder.save();
+
+  res.status(200).json({ message: "Folder renamed successfully", folder: req.folder });
+}
+
+// Deletes the folder AND everything inside it (files, AI data, chat references).
+async function handleDeleteFolder(req, res) {
+  const files = await File.find({ folder: req.folder._id, user: req.user.userId });
+
+  await deleteFiles(files);
+  await req.folder.deleteOne();
+
+  res.status(200).json({ message: "Folder deleted successfully" });
 }
 
 module.exports = {
   handleCreateFolder,
-  handleGetFolder,
+  handleGetFolders,
   handleRenameFolder,
   handleDeleteFolder,
 };

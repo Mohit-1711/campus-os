@@ -1,19 +1,18 @@
 const express = require("express");
-
 const {
   handleSignup,
   handleLogin,
-  handleGetMe,
   handleLogout,
+  handleGetMe,
 } = require("../controllers/authControllers");
-
 const handleAuth = require("../middlewares/authMiddleware");
+const { authLimiter } = require("../middlewares/rateLimiters");
 
 const router = express.Router();
 
-router.post("/signup", handleSignup);
-router.post("/login", handleLogin);
+router.post("/signup", authLimiter, handleSignup);
+router.post("/login", authLimiter, handleLogin);
 router.post("/logout", handleLogout);
 router.get("/me", handleAuth, handleGetMe);
 
-module.exports = { router };
+module.exports = router;

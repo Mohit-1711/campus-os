@@ -1,309 +1,164 @@
-const mongoose = require("mongoose");
 const fs = require("fs/promises");
 const cloudinary = require("../config/cloudinary");
 const File = require("../models/fileModel");
 const Folder = require("../models/folderModel");
-const DocumentChunk = require("../models/documentChunkModel");
-const { processPdf } = require("../utils/documentProcessor");
+const { indexPdf, markIndexingFailed } = require("../services/indexingService");
+const { destroyAsset, serializeFile } = require("../services/fileService");
+const { removeTempFile } = require("../utils/tempFiles");
+const { extractPdfText } = require("../utils/documentProcessor");
+const { httpError } = require("../utils/httpError");
+const { assertObjectId } = require("../utils/validate");
 
-async function uploadAiDocument(req, res, next) {
-  let cloudinaryResult = null;
-  let savedFile = null;
-  let savedFolder = null;
+const AI_FOLDER_NAME = "AI Uploads";
+
+async function findOrCreateAiFolder(userId) {
+  const existing = await Folder.findOne({ user: userId, name: AI_FOLDER_NAME });
+  return existing || Folder.create({ user: userId, name: AI_FOLDER_NAME });
+}
+
+/** Upload a PDF straight from the assistant: stored in "AI Uploads" and indexed. */
+async function uploadAiDocument(req, res) {
+  if (!req.file) {
+    throw httpError(400, "Please select a PDF file to upload.");
+  }
+
+  let uploaded = null;
+  let file = null;
 
   try {
-    if (!req.file) {
-      return res.status(400).json({
-        message: "Please select a PDF file to upload.",
-      });
-    }
-
-    // Read and process the temporary PDF.
     const buffer = await fs.readFile(req.file.path);
-    const { numPages, chunks } = await processPdf(buffer);
 
-    if (!chunks.length) {
-      return res.status(422).json({
-        message: "No readable content was found in this PDF.",
-      });
-    }
+    // Validate the PDF before spending a Cloudinary upload on it.
+    await extractPdfText(buffer);
 
-    // Find or create the user's AI Uploads folder.
-    savedFolder = await Folder.findOne({
-      user: req.user.userId,
-      name: "AI Uploads",
-    });
+    const folder = await findOrCreateAiFolder(req.user.userId);
 
-    if (!savedFolder) {
-      savedFolder = await Folder.create({
-        user: req.user.userId,
-        name: "AI Uploads",
-      });
-    }
-
-    // Upload the original PDF to Cloudinary.
-    cloudinaryResult = await cloudinary.uploader.upload(req.file.path, {
+    uploaded = await cloudinary.uploader.upload(req.file.path, {
       resource_type: "raw",
       folder: "campus-os/ai-uploads",
     });
 
-    // Save file metadata.
-    savedFile = await File.create({
+    file = await File.create({
       user: req.user.userId,
-      folder: savedFolder._id,
+      folder: folder._id,
       name: req.file.originalname,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
       size: req.file.size,
-      cloudinaryUrl: cloudinaryResult.secure_url,
-      cloudinaryPublicId: cloudinaryResult.public_id,
-      cloudinaryResourceType: cloudinaryResult.resource_type,
+      cloudinaryUrl: uploaded.secure_url,
+      cloudinaryPublicId: uploaded.public_id,
+      cloudinaryResourceType: uploaded.resource_type,
       source: "ai_upload",
       processingStatus: "pending",
     });
 
-    // Prepare and save document chunks.
-    const chunkDocuments = chunks.map((content, index) => ({
-      user: req.user.userId,
-      folder: savedFolder._id,
-      file: savedFile._id,
-      content,
-      chunkIndex: index,
-    }));
+    const processing = await indexPdf(file, buffer);
 
-    await DocumentChunk.insertMany(chunkDocuments);
-
-    // Mark ready only after chunks are saved.
-    savedFile.processingStatus = "ready";
-    await savedFile.save();
-
-    return res.status(201).json({
+    res.status(201).json({
       message: "Document uploaded and processed successfully.",
-      file: {
-        _id: savedFile._id,
-        name: savedFile.name,
-        originalName: savedFile.originalName,
-        mimeType: savedFile.mimeType,
-        size: savedFile.size,
-        folder: savedFile.folder,
-        source: savedFile.source,
-        processingStatus: savedFile.processingStatus,
-        createdAt: savedFile.createdAt,
-      },
-      processing: {
-        numPages,
-        totalChunks: chunks.length,
-      },
+      file: serializeFile(file),
+      processing,
     });
   } catch (error) {
-    // Roll back database records created by this request.
-    if (savedFile) {
-      try {
-        await DocumentChunk.deleteMany({
-          file: savedFile._id,
-          user: req.user.userId,
-        });
-
-        await File.deleteOne({
-          _id: savedFile._id,
-          user: req.user.userId,
-        });
-      } catch (cleanupError) {
-        console.error("Database rollback failed:", cleanupError.message);
-      }
+    // Roll back everything this request created.
+    if (file) {
+      await markIndexingFailed(file);
+      await File.deleteOne({ _id: file._id }).catch(() => {});
     }
 
-    // Remove the uploaded Cloudinary asset if necessary.
-    if (cloudinaryResult?.public_id) {
-      try {
-        const result = await cloudinary.uploader.destroy(
-          cloudinaryResult.public_id,
-          {
-            resource_type: cloudinaryResult.resource_type,
-          },
-        );
-
-        if (result.result !== "ok" && result.result !== "not found") {
-          console.error("Cloudinary rollback could not be confirmed:", result);
-        }
-      } catch (cleanupError) {
-        console.error("Cloudinary rollback failed:", cleanupError.message);
-      }
+    if (uploaded) {
+      await destroyAsset({
+        cloudinaryPublicId: uploaded.public_id,
+        cloudinaryResourceType: uploaded.resource_type,
+      }).catch((cleanupError) => console.error("Cloudinary rollback failed:", cleanupError.message));
     }
 
-    return next(error);
+    throw error;
   } finally {
-    // Remove temporary upload.
-    if (req.file?.path) {
-      try {
-        await fs.unlink(req.file.path);
-      } catch (cleanupError) {
-        if (cleanupError.code !== "ENOENT") {
-          console.error("Temporary file cleanup failed:", cleanupError.message);
-        }
-      }
-    }
+    await removeTempFile(req.file.path);
   }
 }
 
-async function indexExistingDocument(req, res, next) {
-  try {
-    const { fileId } = req.params;
-    const userId = req.user.userId;
+/**
+ * Download a stored PDF from Cloudinary. Different account settings expose files
+ * differently, so try a signed URL first and fall back to the public URL.
+ */
+async function downloadStoredPdf(file) {
+  const base = {
+    resource_type: file.cloudinaryResourceType,
+    type: "upload",
+    expires_at: Math.floor(Date.now() / 1000) + 300,
+  };
 
-    if (!mongoose.isValidObjectId(fileId)) {
-      return res.status(400).json({
-        message: "Invalid file ID.",
-      });
-    }
+  const candidates = [
+    cloudinary.utils.private_download_url(file.cloudinaryPublicId, "pdf", base),
+    cloudinary.utils.private_download_url(file.cloudinaryPublicId, "", base),
+    file.cloudinaryUrl,
+  ];
 
-    // Verify that the file belongs to the authenticated user.
-    const file = await File.findOne({
-      _id: fileId,
-      user: userId,
-    });
+  let lastStatus = "no response";
 
-    if (!file) {
-      return res.status(404).json({
-        message: "File not found.",
-      });
-    }
-
-    if (file.mimeType !== "application/pdf") {
-      return res.status(415).json({
-        message: "Only PDF files can be indexed.",
-      });
-    }
-
-    if (!file.cloudinaryPublicId || !file.cloudinaryResourceType) {
-      return res.status(400).json({
-        message: "Cloudinary file information is missing.",
-      });
-    }
-
-    // Avoid unnecessary re-indexing.
-    if (file.processingStatus === "ready") {
-      return res.status(200).json({
-        message: "This document is already indexed.",
-        fileId: file._id,
-        processingStatus: file.processingStatus,
-      });
-    }
-
-    // Mark processing as pending.
-    file.processingStatus = "pending";
-    await file.save();
-
+  for (const url of candidates) {
     try {
-      // Verify the asset's actual Cloudinary delivery configuration.
-      const resource = await cloudinary.api.resource(file.cloudinaryPublicId, {
-        resource_type: file.cloudinaryResourceType,
-        type: "upload",
-      });
-
-      console.log("[Cloudinary asset]", {
-        publicId: resource.public_id,
-        resourceType: resource.resource_type,
-        deliveryType: resource.type,
-        format: resource.format,
-      });
-
-      // Generate a temporary download URL using the verified
-      // delivery type. This may still be rejected if the account
-      // has additional delivery-access restrictions.
-      const downloadUrl = cloudinary.utils.private_download_url(
-        file.cloudinaryPublicId,
-        "pdf",
-        {
-          resource_type: file.cloudinaryResourceType,
-          type: resource.type,
-          expires_at: Math.floor(Date.now() / 1000) + 300,
-        },
-      );
-
-      // Download the existing PDF.
-      const response = await fetch(downloadUrl);
+      const response = await fetch(url);
 
       if (!response.ok) {
-        throw new Error(`Cloudinary download failed: HTTP ${response.status}`);
+        lastStatus = `HTTP ${response.status}`;
+        continue;
       }
 
       const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.subarray(0, 5).toString() === "%PDF-") return buffer;
 
-      // Reuse the existing PDF processing pipeline.
-      const { numPages, chunks } = await processPdf(buffer);
-
-      if (!chunks.length) {
-        throw new Error("No readable content was found in this PDF.");
-      }
-
-      // Prepare chunks before modifying existing database records.
-      const chunkDocuments = chunks.map((content, index) => ({
-        user: userId,
-        folder: file.folder,
-        file: file._id,
-        content,
-        chunkIndex: index,
-      }));
-
-      // Remove incomplete chunks from previous failed attempts.
-      await DocumentChunk.deleteMany({
-        file: file._id,
-        user: userId,
-      });
-
-      // Save the new chunks.
-      await DocumentChunk.insertMany(chunkDocuments, {
-        ordered: true,
-      });
-
-      // Mark the file ready.
-      file.processingStatus = "ready";
-      await file.save();
-
-      return res.status(200).json({
-        message: "Existing document indexed successfully.",
-        fileId: file._id,
-        processing: {
-          numPages,
-          totalChunks: chunks.length,
-        },
-        processingStatus: file.processingStatus,
-      });
-    } catch (processingError) {
-      // Remove chunks from a failed indexing attempt.
-      // This also handles partial insertMany failures.
-      try {
-        await DocumentChunk.deleteMany({
-          file: file._id,
-          user: userId,
-        });
-      } catch (cleanupError) {
-        console.error(
-          "Failed to clean up document chunks:",
-          cleanupError.message,
-        );
-      }
-
-      file.processingStatus = "failed";
-
-      try {
-        await file.save();
-      } catch (saveError) {
-        console.error(
-          "Failed to update document processing status:",
-          saveError.message,
-        );
-      }
-
-      throw processingError;
+      lastStatus = "response was not a PDF";
+    } catch (error) {
+      lastStatus = error.message;
     }
+  }
+
+  throw httpError(
+    502,
+    `Could not download this PDF from storage (${lastStatus}). If it keeps failing, enable PDF delivery in your Cloudinary security settings, or re-upload the file.`,
+  );
+}
+
+/** Make an existing PDF (uploaded before indexing existed, or one that failed) usable by the AI. */
+async function indexExistingDocument(req, res) {
+  const { fileId } = req.params;
+  assertObjectId(fileId, "file ID");
+
+  const file = await File.findOne({ _id: fileId, user: req.user.userId });
+
+  if (!file) {
+    throw httpError(404, "File not found.");
+  }
+
+  if (file.mimeType !== "application/pdf") {
+    throw httpError(415, "Only PDF files can be used with the AI Assistant.");
+  }
+
+  if (file.processingStatus === "ready") {
+    return res.status(200).json({
+      message: "This document is already indexed.",
+      file: serializeFile(file),
+    });
+  }
+
+  file.processingStatus = "pending";
+  await file.save();
+
+  try {
+    const processing = await indexPdf(file, await downloadStoredPdf(file));
+
+    res.status(200).json({
+      message: "Document indexed successfully.",
+      file: serializeFile(file),
+      processing,
+    });
   } catch (error) {
-    return next(error);
+    await markIndexingFailed(file);
+    throw error;
   }
 }
 
-module.exports = {
-  uploadAiDocument,
-  indexExistingDocument,
-};
+module.exports = { uploadAiDocument, indexExistingDocument };

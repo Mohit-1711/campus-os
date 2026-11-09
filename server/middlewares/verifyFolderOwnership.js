@@ -1,32 +1,20 @@
-const mongoose = require("mongoose");
 const Folder = require("../models/folderModel");
+const { assertObjectId } = require("../utils/validate");
+const { httpError } = require("../utils/httpError");
 
+/** Loads req.folder and guarantees it belongs to the logged-in user. */
 async function verifyFolderOwnership(req, res, next) {
-  try {
-    const { folderId } = req.params;
+  const { folderId } = req.params;
+  assertObjectId(folderId, "folder ID");
 
-    if (!mongoose.Types.ObjectId.isValid(folderId)) {
-      return res.status(400).json({
-        message: "Invalid folder ID",
-      });
-    }
+  const folder = await Folder.findOne({ _id: folderId, user: req.user.userId });
 
-    const folder = await Folder.findOne({
-      _id: folderId,
-      user: req.user.userId,
-    });
-
-    if (!folder) {
-      return res.status(404).json({
-        message: "Folder not found",
-      });
-    }
-    req.folder = folder;
-
-    next();
-  } catch (error) {
-    next(error);
+  if (!folder) {
+    throw httpError(404, "Folder not found");
   }
+
+  req.folder = folder;
+  next();
 }
 
 module.exports = verifyFolderOwnership;
