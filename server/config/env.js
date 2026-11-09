@@ -8,16 +8,17 @@ const env = {
   isProd,
   port: Number(process.env.PORT) || 5000,
 
-  // MONGO_URL is accepted too, because older versions of this project used it.
+  // Support legacy environment variable name.
   mongoUri: process.env.MONGO_URI || process.env.MONGO_URL,
 
   jwtSecret: process.env.JWT_SECRET,
+
   clientOrigins: (process.env.CLIENT_ORIGIN || "http://localhost:5173")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),
 
-  // Cross-domain deployments (e.g. Vercel + Render) need SameSite=None + Secure.
+  // Cross-domain cookies require SameSite=None and Secure.
   cookieSameSite: process.env.COOKIE_SAME_SITE || (isProd ? "none" : "lax"),
 
   cloudinary: {
@@ -30,9 +31,9 @@ const env = {
   geminiModel: process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
 };
 
-/** Fail fast on anything the app cannot run without; warn about optional services. */
 function validateEnv() {
   const missing = [];
+
   if (!env.mongoUri) missing.push("MONGO_URI");
   if (!env.jwtSecret) missing.push("JWT_SECRET");
 
@@ -43,12 +44,17 @@ function validateEnv() {
   }
 
   const { cloudName, apiKey, apiSecret } = env.cloudinary;
+
   if (!cloudName || !apiKey || !apiSecret) {
-    console.warn("[config] Cloudinary is not configured - file uploads will fail.");
+    console.warn(
+      "[config] Cloudinary is not configured - file uploads will fail.",
+    );
   }
 
   if (!env.geminiApiKey) {
-    console.warn("[config] GEMINI_API_KEY is not set - the AI assistant will not answer.");
+    console.warn(
+      "[config] GEMINI_API_KEY is not set - the AI assistant will not answer.",
+    );
   }
 }
 
